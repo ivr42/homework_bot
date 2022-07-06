@@ -8,12 +8,6 @@ class BotError(Exception):
     pass
 
 
-class ResponseError(BotError):
-    """Raises when response is malformed."""
-
-    pass
-
-
 class ResponseKeyError(BotError):
     """Raises when found a key error in API response.
 
@@ -34,9 +28,3 @@ class ResponseKeyError(BotError):
             self.message = f"{message}: {keys}"
 
         super().__init__(self.message)
-
-
-class HomeworkStatusError(BotError):
-    """Raises when found error in homework status in API response."""
-
-    pass

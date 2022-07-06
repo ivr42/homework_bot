@@ -2,6 +2,7 @@ import logging
 import os
 import sys
 import time
+from http import HTTPStatus
 from typing import Optional
 
 import requests
@@ -9,7 +10,7 @@ from dotenv import load_dotenv
 from telegram import Bot
 from telegram.error import TelegramError
 
-from exceptions import BotError, HomeworkStatusError, ResponseError, ResponseKeyError
+from exceptions import BotError, ResponseKeyError
 
 load_dotenv()
 PRACTICUM_TOKEN = os.getenv("PRACTICUM_TOKEN")
@@ -47,17 +48,15 @@ def send_message(bot: Bot, message: str) -> None:
         bot (telegram.Bot): Бот, оправляющий сообщения
         message (str): Сообщение
     """
-    print("TELEGRAM: ", message)
-
-    # try:
-    #     bot.send_message(
-    #         chat_id=TELEGRAM_CHAT_ID,
-    #         text=message,
-    #     )
-    # except TelegramError as err:
-    #     logger.error(err)
-    # else:
-    #     logger.info(f"Сообщение успешно отправлено: {message}")
+    try:
+        bot.send_message(
+            chat_id=TELEGRAM_CHAT_ID,
+            text=message,
+        )
+    except TelegramError as err:
+        logger.error(err)
+    else:
+        logger.info(f"Сообщение успешно отправлено: {message}")
 
 
 def get_api_answer(timestamp: int = int(time.time())) -> dict:
@@ -76,9 +75,10 @@ def get_api_answer(timestamp: int = int(time.time())) -> dict:
 
     response = requests.get(ENDPOINT, headers=HEADERS, params=params)
 
-    if not response.status_code != "200":
+    if response.status_code != HTTPStatus.OK:
         raise requests.exceptions.RequestException(
-            f"HTTP status code не равен 200: {response.status_code}"
+            f"HTTP status code не равен {HTTPStatus.OK}: "
+            f"{response.reason} ({response.status_code})"
         )
 
     return response.json()
@@ -95,14 +95,12 @@ def check_response(response: dict) -> list:
               доступный в ответе API по ключу 'homeworks'.
 
     Raises:
-        ResponseKeyError: если в ответе ошибка
-
-
+        ResponseKeyError: если в ответе отсутствует обязательный ключ
+            или если в ответе присутствует недокументированный ключ
+        TypeError: если тип объектов не совпадает с заданным
     """
     if not isinstance(response, dict):
-        raise ResponseError(
-            "Ответ (response) API должен иметь тип 'dict'"
-        )
+        raise TypeError("Ответ (response) API должен иметь тип 'dict'")
 
     missed_keys = API_KEYS - set(response.keys())
     if missed_keys:
@@ -117,10 +115,7 @@ def check_response(response: dict) -> list:
         )
 
     if not isinstance(response.get("homeworks"), list):
-        raise ResponseKeyError(
-            "homeworks",
-            "В ответе API следующие ключи должны иметь тип 'list'"
-        )
+        raise TypeError("В ответе API 'homeworks' должен иметь тип 'list'")
 
     return response.get("homeworks", [])
 
@@ -141,7 +136,7 @@ def parse_status(homework: dict) -> Optional[str]:
     try:
         verdict = HOMEWORK_STATUSES[homework_status]
     except KeyError:
-        raise HomeworkStatusError(
+        raise KeyError(
             f"Недокументированный статус проверки домашней работы: "
             f'"{homework_status}"'
         )
@@ -177,7 +172,8 @@ def main():
     bot = Bot(token=TELEGRAM_TOKEN)
 
     current_timestamp = int(time.time())
-    current_timestamp = 0
+    cached_error = ""
+    was_error = False
 
     while True:
         try:
@@ -190,24 +186,29 @@ def main():
         except requests.exceptions.RequestException as err:
             message = f"Недоступен endpoint API yandex.practicum: {err}"
             logger.error(message)
+            was_error = True
 
         except BotError as err:
             message = str(err)
             logger.error(message)
+            was_error = True
 
         except Exception as err:
             message = f"Сбой в работе программы: {err}"
             logger.error(message)
+            was_error = True
 
-        # ToDo: сделать кэширование сообщений об ошибках!!
         if not message:
             logger.debug("Статус проверки домашней работы не изменился")
+        elif was_error:
+            if message != cached_error:
+                send_message(bot, message)
+                cached_error = message
         else:
             send_message(bot, message)
 
         current_timestamp = int(time.time())
 
-        exit()
         time.sleep(RETRY_TIME)
 
 
