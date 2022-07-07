@@ -23,20 +23,11 @@ HEADERS = {"Authorization": f"OAuth {PRACTICUM_TOKEN}"}
 
 API_KEYS = {"current_date", "homeworks"}
 
-HOMEWORK_STATUSES = {
+VERDICTS = {
     "approved": "Работа проверена: ревьюеру всё понравилось. Ура!",
     "reviewing": "Работа взята на проверку ревьюером.",
     "rejected": "Работа проверена: у ревьюера есть замечания.",
 }
-
-logger = logging.getLogger(__name__)
-logger.setLevel(logging.DEBUG)
-stdout_handler = logging.StreamHandler(stream=sys.stdout)
-formatter = logging.Formatter(
-    "%(asctime)s %(filename)s/%(funcName)s [%(levelname)s] %(message)s"
-)
-stdout_handler.setFormatter(formatter)
-logger.addHandler(stdout_handler)
 
 
 def send_message(bot: Bot, message: str) -> None:
@@ -128,13 +119,13 @@ def parse_status(homework: dict) -> Optional[str]:
 
     Returns:
         str: подготовленную для отправки в Telegram строку,
-             содержащую один из вердиктов словаря HOMEWORK_STATUSES
+             содержащую один из вердиктов словаря VERDICTS
     """
     homework_name = str(homework.get("homework_name", ""))
     homework_status = str(homework.get("status"))
 
     try:
-        verdict = HOMEWORK_STATUSES[homework_status]
+        verdict = VERDICTS[homework_status]
     except KeyError:
         raise KeyError(
             f"Недокументированный статус проверки домашней работы: "
@@ -152,13 +143,7 @@ def check_tokens() -> bool:
                 False - если хотя бы одна переменная окружения не задана
                 (т.е. равна None)
     """
-    tokens_to_check = (
-        PRACTICUM_TOKEN,
-        TELEGRAM_TOKEN,
-        TELEGRAM_CHAT_ID,
-    )
-
-    return None not in tokens_to_check
+    return all((PRACTICUM_TOKEN, TELEGRAM_TOKEN, TELEGRAM_CHAT_ID))
 
 
 def main():
@@ -172,45 +157,50 @@ def main():
     bot = Bot(token=TELEGRAM_TOKEN)
 
     current_timestamp = int(time.time())
-    cached_error = ""
+    cached_message = ""
     was_error = False
 
     while True:
         try:
             response = get_api_answer(current_timestamp)
-
             homeworks = check_response(response)
-
             message = "\n\n".join(parse_status(h) for h in homeworks)
 
         except requests.exceptions.RequestException as err:
             message = f"Недоступен endpoint API yandex.practicum: {err}"
-            logger.error(message)
             was_error = True
 
         except BotError as err:
             message = str(err)
-            logger.error(message)
             was_error = True
 
         except Exception as err:
             message = f"Сбой в работе программы: {err}"
-            logger.error(message)
             was_error = True
 
-        if not message:
-            logger.debug("Статус проверки домашней работы не изменился")
-        elif was_error:
-            if message != cached_error:
-                send_message(bot, message)
-                cached_error = message
         else:
-            send_message(bot, message)
-
-        current_timestamp = int(time.time())
-
-        time.sleep(RETRY_TIME)
+            if message:
+                send_message(bot, message)
+            else:
+                logger.debug("Статус проверки домашней работы не изменился")
+        finally:
+            if was_error:
+                logger.error(message)
+                if message != cached_message:
+                    send_message(bot, message)
+            cached_message = message
+            current_timestamp = int(time.time())
+            time.sleep(RETRY_TIME)
 
 
 if __name__ == "__main__":
+    logger = logging.getLogger(__name__)
+    logger.setLevel(logging.DEBUG)
+    stdout_handler = logging.StreamHandler(stream=sys.stdout)
+    formatter = logging.Formatter(
+        "%(asctime)s %(filename)s/%(funcName)s [%(levelname)s] %(message)s"
+    )
+    stdout_handler.setFormatter(formatter)
+    logger.addHandler(stdout_handler)
+
     main()
