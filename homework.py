@@ -29,6 +29,8 @@ VERDICTS = {
     "rejected": "Работа проверена: у ревьюера есть замечания.",
 }
 
+LOGGER = logging.getLogger(__name__)
+
 
 def send_message(bot: Bot, message: str) -> None:
     """Отправляет сообщение в Telegram чат.
@@ -45,9 +47,9 @@ def send_message(bot: Bot, message: str) -> None:
             text=message,
         )
     except TelegramError as err:
-        logger.error(err)
+        LOGGER.error(err)
     else:
-        logger.info(f"Сообщение успешно отправлено: {message}")
+        LOGGER.info(f"Сообщение успешно отправлено: {message}")
 
 
 def get_api_answer(timestamp: int = int(time.time())) -> dict:
@@ -149,7 +151,7 @@ def check_tokens() -> bool:
 def main():
     """Основная логика работы бота."""
     if not check_tokens():
-        logger.critical(
+        LOGGER.critical(
             "Не заданы переменные окружения! Работа бота невозможна!"
         )
         exit()
@@ -182,10 +184,10 @@ def main():
             if message:
                 send_message(bot, message)
             else:
-                logger.debug("Статус проверки домашней работы не изменился")
+                LOGGER.debug("Статус проверки домашней работы не изменился")
         finally:
             if was_error:
-                logger.error(message)
+                LOGGER.error(message)
                 if message != cached_message:
                     send_message(bot, message)
             cached_message = message
@@ -194,13 +196,12 @@ def main():
 
 
 if __name__ == "__main__":
-    logger = logging.getLogger(__name__)
-    logger.setLevel(logging.DEBUG)
+    LOGGER.setLevel(logging.DEBUG)
     stdout_handler = logging.StreamHandler(stream=sys.stdout)
     formatter = logging.Formatter(
         "%(asctime)s %(filename)s/%(funcName)s [%(levelname)s] %(message)s"
     )
     stdout_handler.setFormatter(formatter)
-    logger.addHandler(stdout_handler)
+    LOGGER.addHandler(stdout_handler)
 
     main()
